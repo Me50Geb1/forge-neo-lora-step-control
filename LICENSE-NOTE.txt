@@ -1,0 +1,6 @@
+This implementation was written as a new minimal extension around Forge Neo's
+runtime callback/API surface. It does not copy LoRA Block Weight preset, block
+analysis, XYZ plot, random-weight, UI, or monkey-patch implementation code.
+
+The reference repositories should retain their own upstream licenses and
+copyright notices when redistributed independently.
