@@ -1,6 +1,6 @@
 # Forge Neo LoRA Step Control
 
-**Version: V1**
+**Version: V1.3**
 
 Minimal LoRA sampling-step control extension for **Forge Neo 2.30**.
 
@@ -22,7 +22,7 @@ This extension adds sampling-step scheduling to normal LoRA tags without impleme
 
 ## Compatibility
 
-V1 has been tested with:
+V1.3 has been tested with:
 
 - Forge Neo 2.30
 - Python 3.13
@@ -82,4 +82,10 @@ No additional Python packages are required.
 - `step=5-10` is therefore active at steps 5, 6, 7, 8 and 9.
 - Normal LoRAs without `start=`, `stop=` or `step=` are not scheduled.
 - Duplicate use of the exact same LoRA file with different schedules in one prompt is not supported because Forge identifies online wrappers by LoRA filename.
-- V1 is the first locally tested working release, including simultaneous use with `lora-block-weight-neo` block values.
+- V1.3 is the current locally tested working release, including simultaneous use with `lora-block-weight-neo` block values.
+
+## V1.3 caret/editing fix
+
+- Normal trusted keyboard editing in the prompt (Backspace/Delete/typing) is no longer intercepted by schedule-preservation logic.
+- Only synthetic textarea rewrites from lora-block-weight-neo trigger automatic restoration of start/stop/step.
+- Caret preservation from V1.2 remains in place.

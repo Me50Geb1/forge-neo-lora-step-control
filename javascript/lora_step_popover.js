@@ -9,9 +9,11 @@
  *   <lora:name:stop=10:1:lbw=FACE>
  *   <lora:name:step=5-10:1:lbw=FACE>
  *
- * When LBW rebuilds the tag it drops unknown parameters. Step Control restores
- * the schedule immediately after that rewrite and sends one synthetic click
- * inside the repaired tag so LBW refreshes its private start/end indices.
+ * When LBW rebuilds the tag it drops unknown parameters. v9 restores the
+ * schedule immediately after that rewrite and then sends one synthetic click
+ * inside the repaired tag so LBW refreshes its private start/end indices. This
+ * keeps the schedule present without reintroducing the stale-index duplication
+ * bug from v4.
  */
 (function () {
     "use strict";
@@ -118,6 +120,7 @@
             return r ? { mode: "step", start: r.start, stop: r.stop } : { mode: "none", start: "", stop: "" };
         }
         if (tag.schedule.start != null && tag.schedule.stop != null) {
+            // Canonicalize a two-token range to one step token for LBW compatibility.
             return { mode: "step", start: tag.schedule.start, stop: tag.schedule.stop };
         }
         if (tag.schedule.start != null) return { mode: "start", start: tag.schedule.start, stop: "" };
@@ -129,6 +132,7 @@
         if (!schedule || schedule.mode === "none") return null;
         if (schedule.mode === "start") return `start=${schedule.start}`;
         if (schedule.mode === "stop") return `stop=${schedule.stop}`;
+        // Both Step range and the old Start+Stop UI serialize as one step token.
         return `step=${schedule.start}-${schedule.stop}`;
     }
 
@@ -137,6 +141,7 @@
         const preserved = [];
         for (const p of tag.params) {
             if (p.named && SCHEDULE_KEYS.has(p.key)) continue;
+            // Repair the common v4 corruption where schedule was nested inside lbw=.
             if (p.named && p.key === "lbw" && /^(start|stop|step)=/i.test(p.value)) continue;
             if (p.raw) preserved.push(p.raw);
         }
@@ -144,15 +149,33 @@
         const all = token ? [token, ...preserved] : preserved;
         const newTag = `<lora:${tag.name}${all.length ? ":" + all.join(":") : ""}>`;
 
+        // Assigning textarea.value moves the browser caret to the end. Preserve
+        // the user's selection and map it through the replaced LoRA tag instead.
+        const savedStart = activeTextarea.selectionStart;
+        const savedEnd = activeTextarea.selectionEnd;
+        const savedDirection = activeTextarea.selectionDirection;
+        const oldLen = tag.endIdx - tag.startIdx;
+        const delta = newTag.length - oldLen;
+        const mapPos = pos => {
+            if (pos == null) return null;
+            if (pos <= tag.startIdx) return pos;
+            if (pos >= tag.endIdx) return pos + delta;
+            const offset = pos - tag.startIdx;
+            return tag.startIdx + Math.min(offset, Math.max(0, newTag.length - 1));
+        };
+
         internalWrite = true;
         const value = activeTextarea.value;
         activeTextarea.value = value.substring(0, tag.startIdx) + newTag + value.substring(tag.endIdx);
         activeTagHint = { name: tag.name, startIdx: tag.startIdx, endIdx: tag.startIdx + newTag.length };
-        if (setSelection) {
-            const caret = Math.min(tag.startIdx + newTag.length - 1, activeTextarea.value.length);
-            activeTextarea.setSelectionRange(caret, caret);
-        }
         notifyInput(activeTextarea);
+
+        if (savedStart != null && savedEnd != null) {
+            const max = activeTextarea.value.length;
+            const restoreStart = Math.max(0, Math.min(mapPos(savedStart), max));
+            const restoreEnd = Math.max(restoreStart, Math.min(mapPos(savedEnd), max));
+            activeTextarea.setSelectionRange(restoreStart, restoreEnd, savedDirection || "none");
+        }
         internalWrite = false;
         return true;
     }
@@ -170,8 +193,8 @@
         e.startWrap.style.display = ["start", "step"].includes(mode) ? "flex" : "none";
         e.stopWrap.style.display = ["stop", "step"].includes(mode) ? "flex" : "none";
         if (mode === "none") e.summary.textContent = "Always active";
-        else if (mode === "start") e.summary.textContent = `Enable from step ${e.start.value || "…"}`;
-        else if (mode === "stop") e.summary.textContent = `Disable at step ${e.stop.value || "…"}`;
+        else if (mode === "start") e.summary.textContent = `Enable from step ${e.start.value || "……"}`;
+        else if (mode === "stop") e.summary.textContent = `Disable at step ${e.stop.value || "……"}`;
         else e.summary.textContent = `Active only in [${e.start.value || "…"}, ${e.stop.value || "…"})`;
     }
 
@@ -214,9 +237,15 @@
         pendingSchedule = schedule;
         if (!rewriteCanonical(tag, schedule, false)) return false;
 
+        // LBW keeps the active tag range in a closed-over currentLoraMatch.
+        // Our write can change the tag length, so immediately refresh that
+        // private range with one synthetic click inside the repaired tag.
         const repaired = findTagByHint(activeTextarea);
         if (!repaired) return true;
         activeTagHint = { name: repaired.name, startIdx: repaired.startIdx, endIdx: repaired.endIdx };
+        const savedStart = activeTextarea.selectionStart;
+        const savedEnd = activeTextarea.selectionEnd;
+        const savedDirection = activeTextarea.selectionDirection;
         const caret = Math.max(repaired.startIdx + 1, repaired.endIdx - 1);
         activeTextarea.setSelectionRange(caret, caret);
         resyncingLbw = true;
@@ -224,6 +253,12 @@
             activeTextarea.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
         } finally {
             resyncingLbw = false;
+            if (savedStart != null && savedEnd != null) {
+                const max = activeTextarea.value.length;
+                const restoreStart = Math.max(0, Math.min(savedStart, max));
+                const restoreEnd = Math.max(restoreStart, Math.min( savedEnd, max));
+                activeTextarea.setSelectionRange(restoreStart, restoreEnd, savedDirection || "none");
+            }
         }
         return true;
     }
@@ -282,7 +317,9 @@
         activeTagHint = { name: tag.name, startIdx: tag.startIdx, endIdx: tag.endIdx };
         pendingSchedule = scheduleFromTag(tag);
 
-        rewriteCanonical(tag, pendingSchedule, true);
+        // Before LBW parses the tag, canonicalize the single schedule token to
+        // position 1 so its parser does not mistake it for lbw=.
+        rewriteCanonical(tag, pendingSchedule, false);
         tag = findLoraAtPosition(textarea, textarea.selectionStart || 0) || tag;
         activeTagHint = { name: tag.name, startIdx: tag.startIdx, endIdx: tag.endIdx };
         sessionOpen = true;
@@ -303,10 +340,13 @@
     }
 
     function init() {
+        // Capture phase is deliberate: canonicalize before LBW's own click handler parses the tag.
         document.addEventListener("click", e => {
             if (isPromptTextarea(e.target)) beginSession(e.target);
         }, true);
 
+        // Clicking outside the LBW popover closes the editing session. Restore
+        // the schedule before the outside action (including Generate) runs.
         document.addEventListener("mousedown", e => {
             if (!sessionOpen) return;
             const pop = document.getElementById(LBW_POPOVER_ID);
@@ -315,6 +355,7 @@
             endSession();
         }, true);
 
+        // LBW close button is inside the popover, so handle it explicitly.
         document.addEventListener("click", e => {
             if (sessionOpen && e.target && e.target.id === "lbw-popover-close") endSession();
         }, true);
@@ -323,8 +364,31 @@
             if (sessionOpen && e.key === "Escape") endSession();
         }, true);
 
+        // lora-block-weight-neo rebuilds the complete tag whenever Weight, a
+        // preset, or a block slider changes. Its rebuilt tag only contains the
+        // fields LBW knows about, so start=/stop=/step= disappears. Restore the
+        // pending schedule immediately AFTER LBW finishes the rewrite, then
+        // synthesize one click inside the repaired tag so LBW refreshes its
+        // private currentLoraMatch start/end indices. This avoids the stale-index
+        // duplication bug seen in v4 while keeping the schedule present at all
+        // times (including when Generate is pressed without closing the popup).
         document.addEventListener("input", e => {
             if (internalWrite || !sessionOpen || e.target !== activeTextarea || resyncingLbw) return;
+
+            // Never fight normal user editing. Backspace/Delete/typing produce a
+            // trusted InputEvent; LBW's programmatic textarea rewrite dispatches
+            // a synthetic (untrusted) input event. Only the latter needs schedule
+            // restoration. For trusted edits, refresh our hint/schedule from the
+            // text as it now exists and leave the caret/content completely alone.
+            if (e.isTrusted) {
+                const edited = findTagByHint(activeTextarea) || findLoraAtPosition(activeTextarea, activeTextarea.selectionStart || 0);
+                if (edited) {
+                    activeTagHint = { name: edited.name, startIdx: edited.startIdx, endIdx: edited.endIdx };
+                    pendingSchedule = scheduleFromTag(edited);
+                }
+                return;
+            }
+
             const tag = findTagByHint(activeTextarea);
             if (!tag) return;
             activeTagHint = { name: tag.name, startIdx: tag.startIdx, endIdx: tag.endIdx };
@@ -345,6 +409,12 @@
                 if (!repaired) return;
                 activeTagHint = { name: repaired.name, startIdx: repaired.startIdx, endIdx: repaired.endIdx };
 
+                // Refresh LBW's closed-over currentLoraMatch so its next edit uses
+                // the repaired tag length. Keep our own capture handler out of
+                // this synthetic resync click.
+                const savedStart = activeTextarea.selectionStart;
+                const savedEnd = activeTextarea.selectionEnd;
+                const savedDirection = activeTextarea.selectionDirection;
                 const caret = Math.max(repaired.startIdx + 1, repaired.endIdx - 1);
                 activeTextarea.setSelectionRange(caret, caret);
                 resyncingLbw = true;
@@ -352,6 +422,12 @@
                     activeTextarea.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
                 } finally {
                     resyncingLbw = false;
+                    if (savedStart != null && savedEnd != null) {
+                        const max = activeTextarea.value.length;
+                        const restoreStart = Math.max(0, Math.min(savedStart, max));
+                        const restoreEnd = Math.max(restoreStart, Math.min(savedEnd, max));
+                        activeTextarea.setSelectionRange(restoreStart, restoreEnd, savedDirection || "none");
+                    }
                 }
             });
         }, true);
