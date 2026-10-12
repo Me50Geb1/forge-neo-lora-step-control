@@ -1,0 +1,46 @@
+/* Forge Neo LoRA Step Control - section injected into lora-block-weight-neo popover */
+#lbw-inprompt-popover .lsc-step-panel {
+    margin: 10px 0 12px;
+    padding: 10px 12px;
+    border: 1px solid var(--border-color-primary, rgba(128,128,128,.35));
+    border-radius: 8px;
+    background: var(--background-fill-secondary, rgba(128,128,128,.08));
+}
+#lbw-inprompt-popover .lsc-header-row,
+#lbw-inprompt-popover .lsc-controls-row {
+    display: flex;
+    align-items: end;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+#lbw-inprompt-popover .lsc-header-row {
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 8px;
+}
+#lbw-inprompt-popover .lsc-heading { font-weight: 700; }
+#lbw-inprompt-popover .lsc-summary { font-size: .82em; opacity: .75; }
+#lbw-inprompt-popover .lsc-field {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 88px;
+    font-size: .82em;
+}
+#lbw-inprompt-popover .lsc-mode-field { min-width: 135px; }
+#lbw-inprompt-popover .lsc-field select,
+#lbw-inprompt-popover .lsc-field input,
+#lbw-inprompt-popover .lsc-clear-btn {
+    min-height: 32px;
+    box-sizing: border-box;
+    border: 1px solid var(--border-color-primary, rgba(128,128,128,.4));
+    border-radius: 6px;
+    background: var(--input-background-fill, var(--background-fill-primary, #222));
+    color: var(--body-text-color, inherit);
+    padding: 4px 7px;
+}
+#lbw-inprompt-popover .lsc-field input { width: 88px; }
+#lbw-inprompt-popover .lsc-clear-btn { cursor: pointer; padding-inline: 11px; }
+#lbw-inprompt-popover .lsc-help { margin-top: 7px; font-size: .76em; opacity: .68; }
+#lbw-inprompt-popover .lsc-help code { font-size: inherit; }
+#lbw-inprompt-popover .lsc-error { min-height: 1em; margin-top: 4px; font-size: .78em; color: var(--error-text-color, #ef4444); }
